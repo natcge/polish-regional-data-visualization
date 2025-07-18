@@ -1,0 +1,152 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(readxl) 
+library(dplyr) 
+library(sf) 
+library(tmap)
+library(tmaptools)
+library(ggplot2)
+library(rvest) 
+library(stringr)
+library(bdl)
+readRenviron(".Renviron")
+options(bdl.api_private_key = Sys.getenv("BDL_API_KEY"))
+
+
+```
+
+```{r}
+# Liczba rozwodów w Polsce ogółem w 2023 roku
+woj <- st_read('./data/Wojewodztwa.shp')
+
+options(bdl.api_private_key = Sys.getenv("BDL_API_KEY"))
+
+search_subjects("rozwody")
+get_variables("P1344")
+
+rozwody <- get_data_by_variable(varId="1616553",year="2023",unitLevel=2) %>% 
+  select(id,val) %>% 
+  mutate(JPT_KOD_JE=substr(id,3,4)) %>% 
+  select(JPT_KOD_JE,val)
+
+woj_all <- left_join(woj,rozwody)
+
+
+
+map2 <- tm_shape(woj_all)+
+  tm_polygons(col="val",title="Liczba rozwodów: ")+
+  tm_text(text="JPT_NAZWA_",size=0.7)+
+  tm_shape(woj_all)+
+  tm_text(text="val",size=0.8,ymod=-0.8)+
+  tm_layout(
+    main.title = "Liczba rozwodów w Polsce ogółem w 2023 roku",
+ main.title.size = 1.1,
+  main.title.position = "center",
+  legend.format = list(text.separator = "–"),
+  legend.text.size = 0.8,
+  legend.title.size = 0.9,
+  legend.text.color = "black",
+  legend.frame = TRUE,
+  legend.outside = TRUE,
+  legend.outside.position = "bottom",  
+  bg.color = "white",
+  frame = FALSE
+  )
+    
+```
+
+```{r}
+
+# Liczba zgonów na 100 000 mieszkańców według województw
+
+ dane <- read_xlsx('Dane (1).xlsx', sheet = 1)%>% 
+  
+  mutate(JPT_KOD_JE=substr(JPT_KOD_JE,1,4)) %>% 
+  filter(substr(JPT_KOD_JE,1,2)=='04') %>% 
+  mutate(X4=as.numeric(X4))
+  
+
+
+pow <- st_read("./data/powiaty.shp") %>% 
+  filter(substr(JPT_KOD_JE,1,2)=='04') 
+  
+
+
+
+
+powiaty_kuj <- left_join(pow, dane)
+
+
+
+map1 <- tm_shape(powiaty_kuj)+
+  tm_polygons(col="X4",title="Liczba zgonów na 100 000 mieszkańców")+
+  
+
+
+ tm_layout(
+  main.title = "Zgony z powodu chorób układu krążenia na 100 000 mieszkańców w województwie Kujawsko-Pomorskim",
+  main.title.size = 1.1,
+  main.title.position = "center",
+  legend.format = list(text.separator = "–"),
+  legend.text.size = 0.8,
+  legend.title.size = 0.9,
+  legend.text.color = "black",
+  legend.frame = TRUE,
+  legend.outside = TRUE,
+  legend.outside.position = "bottom", 
+  frame = FALSE,
+  bg.color = "white"
+    
+  )
+```
+
+```{r}
+
+# Liczba powiatów w województwach Polski
+
+url <- "https://pl.wikipedia.org/wiki/Powiat_(Polska)"
+
+page <- read_html(url)
+tabela <- page %>% 
+  html_table() %>% .[[1]] %>%  
+  as.data.frame()
+
+
+head(tabela)
+colnames(tabela) <- c("wojewodztwo", "miasta_na_prawach_powiatu", "powiaty", "powiaty_ogolem")
+tabela$powiaty_ogolem <- as.numeric(str_replace(tabela$powiaty_ogolem, ",", "."))
+
+tab_pow <- tabela %>% 
+  slice(1:(n() - 1)) %>%
+  select(wojewodztwo,powiaty_ogolem)
+
+plot3 <- ggplot(tab_pow, aes(x = reorder(wojewodztwo, powiaty_ogolem),y = powiaty_ogolem)) + 
+    geom_bar(stat = "identity", fill = "#24492e") + 
+   geom_text(aes(label = powiaty_ogolem), 
+            hjust = -0.2,  
+            size = 3,
+            color = "black")+
+  coord_flip() +
+  labs(title = "Liczba powiatów w województwach Polski",
+       x = "Województwo",
+       y = "Liczba powiatów")
+```
+
+```{r}
+
+pdf("regional_data.pdf", width = 10, height = 7, encoding = "ISOLatin2.enc", family = "Times")
+
+print(map1) 
+print(map2)  
+
+print(plot3)
+
+
+dev.off()
+```
